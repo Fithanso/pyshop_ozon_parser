@@ -1,73 +1,79 @@
-import json
+import asyncio
 import re
-import time
+import json
+import datetime
 from bs4 import BeautifulSoup
 
 from selenium_pages import UseSelenium
+# async режим - 5 минут
+
+class ParsedItem:
+    value = None
+    from_page = None
+
+    def __init__(self, status):
+        self.status = status
 
 
 class Parser:
 
     def __init__(self):
-        self.max_items = 100
-        self.total_parsed = 0
+
         self.url_template = "https://www.ozon.ru/category/smartfony-15502/?page="
         self.site_index_url = "https://www.ozon.ru"
         self.item_value_title = 'Разрешение экрана'
 
-    def run(self):
-        page_counter = 1
+    async def run(self):
+        print('parsing started at:', datetime.datetime.now())
+        tasks = []
+        for page_number in range(1, 4):
+            tasks.append(asyncio.create_task(self.parse_page(page_number)))
 
-        while self.total_parsed < self.max_items:
-            url = self.url_template + str(page_counter)
-            print(f'Now parsing page №{page_counter}: ')
-            print(url)
-            self.total_parsed += self.parse_page(url)
+        await asyncio.gather(*tasks)
 
-            page_counter += 1
-
-    def parse_page(self, url):
+    async def parse_page(self, page_number):
+        url = self.url_template + str(page_number)
         page_driver = UseSelenium().connect_to_page(url)
 
-        print("waiting 20s for page to fully load...")
+        print(f'Now parsing page:', url)
+        print("Waiting 20s for page to fully load...")
         page_driver.execute_script("window.scrollTo(5,8000);")
-        time.sleep(20)
+        await asyncio.sleep(20)
 
         soup = BeautifulSoup(page_driver.page_source, features="lxml")
-        items_parsed = 0
+        parsed_items = []
 
-        for a_tag in soup.find_all('a', class_='tile-hover-target'):
-            status = self.parse_item(self.site_index_url+a_tag['href'])
+        for a_tag in soup.find_all('a', class_='tile-hover-target')[:5]:
+            parsed_item = await self.parse_item(self.site_index_url + a_tag['href'])
+            print(vars(parsed_item))
 
-            if status['status'] == 'ok':
-                items_parsed += 1
-                with open('output.txt', 'a', encoding='utf-8') as f:
-                    f.write(status['value'] + '\n')
+            if parsed_item.status == 'ok':
+                parsed_item.from_page = page_number
+                parsed_items.append(parsed_item)
 
-            if self.total_parsed + items_parsed >= self.max_items:
-                return items_parsed
+        filename = f'page_{page_number}.json'
+        print('creating file:', filename)
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(parsed_items, f)
 
-        return items_parsed
-
-    def parse_item(self, url):
-        print(url)
+    async def parse_item(self, url):
+        print("Parsing item:", url)
         driver = UseSelenium().connect_to_page(url)
         soup = BeautifulSoup(driver.page_source, features="lxml")
-        print("Parsing product's data...")
 
         try:
 
             property_title_span = soup.find('span', text=re.compile(self.item_value_title), recursive=True)
-
             property_value = property_title_span.parent.next_sibling.text
 
-            return {'status': 'ok', 'value': property_value}
+            p_item = ParsedItem(status='ok')
+            p_item.value = property_value
+            return p_item
         except:
-            return {'status': 'error'}
+            return ParsedItem(status='error')
 
 
 if __name__ == '__main__':
     p = Parser()
-    # p.get_items_links()
-    # p.parse_until_completion()
-    p.run()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(p.run())
