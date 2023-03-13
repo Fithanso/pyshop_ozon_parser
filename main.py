@@ -1,4 +1,7 @@
 import json
+import re
+import time
+from bs4 import BeautifulSoup
 
 from selenium_pages import UseSelenium
 
@@ -7,75 +10,64 @@ class Parser:
 
     def __init__(self):
         self.max_items = 100
-        self.links_found = 0
-        self.items = []
+        self.total_parsed = 0
         self.url_template = "https://www.ozon.ru/category/smartfony-15502/?page="
         self.site_index_url = "https://www.ozon.ru"
+        self.item_value_title = 'Разрешение экрана'
 
-    def get_items_links(self):
+    def run(self):
         page_counter = 1
-        open('items_links_plain_text.txt', 'w').close()
-        open('items_statuses.json', 'w').close()
 
-        while self.links_found < self.max_items:
+        while self.total_parsed < self.max_items:
             url = self.url_template + str(page_counter)
-            item_links = UseSelenium().get_items_links(url)
-            allocated_quantity = self.__allocate_items_quantity(item_links)
-            items_to_parse = item_links[:allocated_quantity]
-
-            print(f'On page №{page_counter} I found {len(item_links)} links.')
-            print(f'{allocated_quantity} of them were written to output file.')
+            print(f'Now parsing page №{page_counter}: ')
             print(url)
-
-            with open('items_links_plain_text.txt', 'a') as f:
-                for item in items_to_parse:
-                    f.write(f"{item['link']}\n")
-
-            self.items += items_to_parse
-            self.links_found += allocated_quantity
+            self.total_parsed += self.parse_page(url)
 
             page_counter += 1
 
-        with open('items_statuses.json', 'w', encoding='utf-8') as f:
-            json.dump(self.items, f, ensure_ascii=False, indent=4)
+    def parse_page(self, url):
+        page_driver = UseSelenium().connect_to_page(url)
 
-    def parse_items(self, items):
+        print("waiting 20s for page to fully load...")
+        page_driver.execute_script("window.scrollTo(5,8000);")
+        time.sleep(20)
 
-        all_items_parsed = True
-        for item in items:
-            if not item['parsed']:
-                item_url = self.site_index_url+item['link']
-                result = UseSelenium().parse_item(item_url)
-                print('Result:', result)
-                if result['status'] == 'ok':
-                    item['parsed'] = True
-                    item['value'] = result['value']
-                elif result['status'] == 'error':
-                    all_items_parsed = False
+        soup = BeautifulSoup(page_driver.page_source, features="lxml")
+        items_parsed = 0
 
-        with open('items_statuses.json', 'w', encoding='utf-8') as f:
-            json.dump(items, f, ensure_ascii=False, indent=4)
+        for a_tag in soup.find_all('a', class_='tile-hover-target'):
+            status = self.parse_item(self.site_index_url+a_tag['href'])
 
-        return all_items_parsed
+            if status['status'] == 'ok':
+                items_parsed += 1
+                with open('output.txt', 'a', encoding='utf-8') as f:
+                    f.write(status['value'] + '\n')
 
-    def parse_until_completion(self):
-        with open('items_statuses.json', 'r', encoding='utf-8') as f:
-            items = json.load(f)
-        all_items_parsed = False
+            if self.total_parsed + items_parsed >= self.max_items:
+                return items_parsed
 
-        while not all_items_parsed:
-            all_items_parsed = self.parse_items(items)
+        return items_parsed
 
-    def __allocate_items_quantity(self, item_links):
-        allocated_quantity = len(item_links)
+    def parse_item(self, url):
+        print(url)
+        driver = UseSelenium().connect_to_page(url)
+        soup = BeautifulSoup(driver.page_source, features="lxml")
+        print("Parsing product's data...")
 
-        if self.links_found + len(item_links) > self.max_items:
-            allocated_quantity = len(item_links) - (self.links_found + len(item_links) - self.max_items)
+        try:
 
-        return allocated_quantity
+            property_title_span = soup.find('span', text=re.compile(self.item_value_title), recursive=True)
+
+            property_value = property_title_span.parent.next_sibling.text
+
+            return {'status': 'ok', 'value': property_value}
+        except:
+            return {'status': 'error'}
 
 
 if __name__ == '__main__':
     p = Parser()
     # p.get_items_links()
-    p.parse_until_completion()
+    # p.parse_until_completion()
+    p.run()

@@ -34,14 +34,14 @@ class UseSelenium:
             persona = None
         return persona
 
-    def _connect_to_page(self, url):
+    def connect_to_page(self, url):
         persona = self.__get_headers_proxy()
 
         options = webdriver.ChromeOptions()
         options.add_argument(f"user-agent={persona['user-agent']}")
         options.add_argument("--disable-blink-features=AutomationControlled")
         # options.add_argument("--start-maximized")
-        # options.add_argument("--headless")
+        options.add_argument("--headless")
 
         options_proxy = {
             'proxy': {
@@ -67,49 +67,4 @@ class UseSelenium:
 
         return driver
 
-    def parse_item(self, url):
-        print(url)
-        driver = self._connect_to_page(url)
-        soup = BeautifulSoup(driver.page_source, features="lxml")
-        print("Parsing product's data...")
-
-        try:
-
-            property_title_span = soup.find('span', text=re.compile(self.item_value_title), recursive=True)
-
-            property_value = property_title_span.parent.next_sibling.text
-
-            return {'status': 'ok', 'value': property_value}
-        except:
-            return {'status': 'error'}
-
-    def get_items_links(self, url):
-        driver = self._connect_to_page(url)
-
-        try:
-            time.sleep(10)
-
-            print("waiting 20s for page to fully load...")
-            driver.execute_script("window.scrollTo(5,8000);")
-            time.sleep(20)
-
-            soup = BeautifulSoup(driver.page_source, features="lxml")
-            links = []
-            for a_tag in soup.find_all('a', class_='tile-hover-target'):
-                links.append(a_tag['href'])
-
-            links = list(set(links))
-
-            link_dicts = []
-            for link in links:
-                link_state = {'link':  link, 'parsed': False, 'value': None}
-                link_dicts.append(link_state)
-
-            return link_dicts
-
-        except Exception as ex:
-            print(ex)
-        finally:
-            driver.close()
-            driver.quit()
 
