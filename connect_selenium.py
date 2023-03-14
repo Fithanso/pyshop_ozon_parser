@@ -1,17 +1,12 @@
-from selenium.webdriver.common.by import By
 from seleniumwire import webdriver
 from selenium.webdriver.chrome.service import Service
-import time
 import random
-from bs4 import BeautifulSoup
-import re
+
 
 import lib.config
 
 
 class UseSelenium:
-
-    item_value_title = 'Разрешение экрана'
 
     def __get_headers_proxy(self) -> dict:
         '''
